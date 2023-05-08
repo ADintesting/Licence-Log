@@ -14,10 +14,11 @@ def get_directory():
     canvas = Canvas(height=200, width=300)
 
     log_file_label = Label(text="Select log file.")
-    log_file_label.grid(column=1, row=0, sticky='n')
+    log_file_label.config(font=("Ariel", 14))
+    log_file_label.grid(column=0, columnspan=2, row=0, sticky='n', pady=20)
 
     select_button = Button(text="Select", width=15, command=lambda: select_file(window))
-    select_button.grid(column=2, row=1, sticky='e')
+    select_button.grid(column=1, row=1, sticky='e')
 
     close_button = Button(text="Close", width=15, command=window.destroy)
     close_button.grid(column=0, row=1, sticky='w')
@@ -59,10 +60,11 @@ def list_select_products(log_df, denied_df):
 
     date_label = Label(text=f"Log Start: {start_date.strftime('%d/%m/%Y %H:%M:%S')}   "
                             f"Log End: {end_date.strftime('%d/%m/%Y %H:%M:%S')}")
-    date_label.grid(column=0, row=0, columnspan=3)
+    date_label.grid(column=0, row=1, columnspan=3)
 
     products_label = Label(text=f"Selected products to view:")
-    products_label.grid(column=0, row=1, columnspan=3, sticky='w')
+    products_label.config(font=("Ariel", 14))
+    products_label.grid(column=0, row=0, columnspan=3, sticky='w')
 
     product_list = Listbox(window, selectmode="multiple", width=50)
     product_list.grid(column=0, row=2, columnspan=3)
@@ -113,7 +115,7 @@ def plot_licences(log_df, products):
     pivot = pivot.cumsum().reset_index()
     pivot.to_csv("out_cs.csv")
 
-    plt.figure(figsize=(14, 14))
+    plt.figure(figsize=(14, 10))
     for column in pivot.columns[1:]:
         plot(pivot.datetime,
                  pivot[column],
