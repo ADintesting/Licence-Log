@@ -4,9 +4,7 @@ from tkinter import filedialog as fd
 import matplotlib.pyplot as plt
 import pandas as pd
 from matplotlib.pyplot import plot, show, xlabel, ylabel, figure, yticks, gcf
-import matplotlib.dates as mdates
 from datetime import datetime, timedelta
-import numpy as np
 
 
 def get_directory():
@@ -30,54 +28,37 @@ def get_directory():
 def select_file(window):
     filename = fd.askopenfilename(title="Choose log file", initialdir="/", filetypes=[("log files", "*.log")])
     window.destroy()
-    analyse_form(filename)
+    analyse(filename)
 
 
-def analyse_form(log_file):
-    window = Tk()
-    window.title("Licence Log Analyser")
-    window.config(padx=50, pady=50)
-    canvas = Canvas(height=200, width=300)
-
-    log_file_label = Label(text=f"Selected file:\n{log_file}")
-    log_file_label.grid(column=0, row=0, columnspan=3)
-
-    analyse_button = Button(text=f"Analyse file", width=15,
-                            command=lambda: analyse(log_file, window))
-    analyse_button.grid(column=2, row=2, sticky='e')
-
-    close_button = Button(text="Close", width=15, command=window.destroy)
-    close_button.grid(column=0, row=2, stick='w')
-
-    window.mainloop()
-
-
-def get_files(directory, exts):
-    # return list of file names in given directory which match one of the list of extensions
-    file_names = [fn for fn in os.listdir(directory)
-                  if any(fn.endswith(ext) for ext in exts)]
-
-    return file_names
-
-
-def list_select_products(filename, denied_file):
-    log_df = pd.read_csv(filename)
+def create_df(csv_file):
+    # Adds friendly name and formats date for log and denied files. Creates df to pass to other functions.
+    csv_file_df = pd.read_csv(csv_file)
     friendly_names = pd.read_csv("reference/ProductNames.csv")
 
-    df = pd.merge(log_df, friendly_names, left_on='product', right_on='Feature Name', how='left').drop('Feature Name', axis=1)
+    # join to friendly names
+    df = pd.merge(csv_file_df, friendly_names, left_on='product', right_on='Feature Name', how='left')
+    df = df.drop('Feature Name', axis=1)
     df["fproduct"] = df["SOLIDWORKS Product"].fillna(df["product"])
 
-    start_date = pd.to_datetime(df['date'] + ' ' + df['time'], format="mixed", dayfirst=True).min()
-    end_date = pd.to_datetime(df['date'] + ' ' + df['time'], format="mixed", dayfirst=True).max()
+    # create datetime column
+    df["datetime"] = pd.to_datetime(df['date'] + ' ' + df['time'], format="mixed", dayfirst=True)
 
-    list_products = df["fproduct"].unique()
+    return df
+
+def list_select_products(log_df, denied_df):
+    list_products = log_df["fproduct"].unique()
+
+    start_date = log_df["datetime"].min()
+    end_date = log_df["datetime"].max()
 
     window = Tk()
     window.title("Licence Log Analyser")
     window.config(padx=50, pady=50)
     canvas = Canvas(height=200, width=300)
 
-    date_label = Label(text=f"Log Start: {start_date.strftime('%d/%m/%Y %H:%M:%S')}   Log End: {end_date.strftime('%d/%m/%Y %H:%M:%S')}")
+    date_label = Label(text=f"Log Start: {start_date.strftime('%d/%m/%Y %H:%M:%S')}   "
+                            f"Log End: {end_date.strftime('%d/%m/%Y %H:%M:%S')}")
     date_label.grid(column=0, row=0, columnspan=3)
 
     products_label = Label(text=f"Selected products to view:")
@@ -88,16 +69,10 @@ def list_select_products(filename, denied_file):
 
     for each_item in range(len(list_products)):
         product_list.insert(END, list_products[each_item])
-
         product_list.itemconfig(each_item, bg="yellow" if each_item % 2 == 0 else "cyan")
 
-    denied_df = pd.read_csv(denied_file)
-
-    df_denied = pd.merge(denied_df, friendly_names, left_on='product', right_on='Feature Name', how='left').drop('Feature Name', axis=1)
-    df_denied["fproduct"] = df_denied["SOLIDWORKS Product"].fillna(df_denied["product"])
-
-    grouped_denied = df_denied.groupby(['fproduct']).size().reset_index(name='denied')
-
+    # add number of denied records for each product (as text below selection list)
+    grouped_denied = denied_df.groupby(['fproduct']).size().reset_index(name='denied')
     labels = []
 
     for index, row in grouped_denied.iterrows():
@@ -109,7 +84,7 @@ def list_select_products(filename, denied_file):
         labels[i].grid(column=0, row=i+3, columnspan=3, sticky='w')
 
     plot_button = Button(text=f"Plot usage", width=15,
-                         command=lambda: plot_licences(filename, get_selected_products(product_list)))
+                         command=lambda: plot_licences(log_df, get_selected_products(product_list)))
     plot_button.grid(column=2, row=i+4, sticky='e')
 
     close_button = Button(text="Close", width=15, command=window.destroy)
@@ -119,61 +94,39 @@ def list_select_products(filename, denied_file):
 
 
 def get_selected_products(listbox):
+    # find user selected items in listbox and pass as list
     selected_items = []
     for i in listbox.curselection():
         selected_items.append(listbox.get(i))
     return selected_items
 
 
-def plot_licences(filename, products):
-    # csv file generated by analyse function and uses pandas to create graphs
-    log_df = pd.read_csv(filename)
-    log_df['datetime'] = pd.to_datetime(log_df["date"] + " " + log_df["time"], format="%d/%m/%Y %H:%M:%S")
-    friendly_names = pd.read_csv("reference/ProductNames.csv")
+def plot_licences(log_df, products):
+    # plot selected products on line graph to show usage over time
 
-    df = pd.merge(log_df, friendly_names, left_on='product', right_on='Feature Name', how='left').drop('Feature Name', axis=1)
-    df["fproduct"] = df["SOLIDWORKS Product"].fillna(df["product"])
+    # restricted to user selected products
+    df_selected = log_df.query(f"fproduct in {products}")
 
-    df_selected = df.query(f"fproduct in {products}")
-
-    # Takes a list of pandas dataframe objects and produces a plot of number of licences being used over time
-    product_dfs = df_selected.groupby("fproduct")
-    num_products = product_dfs.ngroups
-
+    # pivot table to report on each product on the same plot
     pivot = pd.pivot_table(df_selected, index="datetime", values='licence', columns='fproduct', fill_value=0)
     pivot.to_csv("out.csv")
     pivot = pivot.cumsum().reset_index()
     pivot.to_csv("out_cs.csv")
 
+    plt.figure(figsize=(14, 14))
     for column in pivot.columns[1:]:
         plot(pivot.datetime,
                  pivot[column],
                  linewidth=1,
                  label=pivot[column].name)
+        plt.xticks(fontsize=8, rotation=45)
         xlabel("Date/Time")
         ylabel("Licences used")
     plt.legend(fontsize=8)
     plt.show()
 
-    # for name, product in product_dfs:
-    #     product['licence_usage'] = product['licence'].cumsum()
-    #     product['datetime'] = pd.to_datetime(product["date"] + " " + product["time"],
-    #                                            format="%d/%m/%Y %H:%M:%S")
-    #     figure(figsize=(14, 10))
-    #     plot(product.datetime, product.licence_usage, label=name)
-    #     plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d/%m %H:%M'))
-    #     gcf().autofmt_xdate()
-    #     xlabel("Time")
-    #     ylabel("Licences used")
-    #     yticks([y for y in range(product.licence_usage.min(), product.licence_usage.max()+1)])
-    #     plt.legend(fontsize=10)
-    #
-    #     show()
 
-
-def analyse(file, window):
-    window.destroy()
-
+def analyse(file):
     log_csv_ext = "_log.csv"                # extension to use for output
 
     log_lines = []                        # list of lines to write to output csv (per file)
@@ -221,7 +174,7 @@ def analyse(file, window):
 
     name_log_csv = file.split('.')[-2] + log_csv_ext
 
-    # delete existing csv if it exists
+    # delete existing log csv if it exists
     if os.path.isfile(name_log_csv):
         os.remove(name_log_csv)
         print("Delete old log file.")
@@ -242,7 +195,7 @@ def analyse(file, window):
 
 
     denied_csv = file.split('.')[-2] + "_denied.csv"
-    # delete existing csv if it exists
+    # delete existing denied csv if it exists
     if os.path.isfile(denied_csv):
         os.remove(denied_csv)
         print("Delete old denied file.")
@@ -261,7 +214,9 @@ def analyse(file, window):
 
         print(f"denied file updated: {denied_csv_file.name}")
 
-    list_select_products(log_csv_file.name, denied_csv_file.name)
+    log_df = create_df(log_csv_file.name)
+    denied_df = create_df(denied_csv_file.name)
+    list_select_products(log_df, denied_df)
 
 
 if __name__ == "__main__":
